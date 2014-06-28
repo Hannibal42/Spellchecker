@@ -30,14 +30,24 @@ mainSpellcheck file1 file2 = do
 
 
 
--- findSuggestions trie "Halo" 
+sentences :: String -> [String] --
+sentences [] = []
+sentences cs = go cs []
+        where
+        	go :: String -> String -> [String]
+        	go []         [] = []
+        	go [c]        ws = if c=='.' then [ws] else [ws ++ [c]]
+        	go (c1:c2:cs) ws
+        	   | isEnd c1 c2 = ws : (go cs []) 
+        	   | otherwise   = go (c2:cs) (ws ++ [c1]) 
+        	    where isEnd c1 c2 = ((c1=='.') || (c1=='!') || (c1=='?')) && (c2==' ')-- Ending of a sentence
 
 analyseText :: [Tree Char] -> String -> IO () -- TODO: I need an interface!!!!!
 analyseText ts x = if (contains ts x) 
 	               then return ()
-	               else print $ "Suggestions for " ++ x ++ ": " ++ (foldl (\ string (word,minEdit) -> string ++ word ++ " " ++ (show minEdit) ++ ", ") "" (take 10  findSuggestions ts x))
+	               else print $ "Suggestions for " ++ x ++ ": " ++ (foldl (\ string (word,minEdit) -> string ++ word ++ " " ++ (show minEdit) ++ ", ") "" (take 10 (findSuggestions ts x)))
 
-
+-- findSuggestions trie "Halo" 
 findSuggestions :: [Tree Char] -> String -> [(String,Int)]
 findSuggestions ts word = quicksort $ calcSuggestions ts [] word 8 1 [0..(length word)]
 
