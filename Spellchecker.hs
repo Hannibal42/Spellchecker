@@ -1,12 +1,19 @@
 module Main where
 import Control.Monad 
 import Data.List (foldl')
+import Data.Char
 
 
 import System.Environment (getArgs)
 
 
 data Tree a = Node a Bool [Tree a] deriving Show
+
+--interface :: [(String, [String] -> IO ())]
+--interface = [("ignore (i)", ignore),("use (u)", use),("leave (l)", leave)]
+
+interface :: String 
+interface = "You have the following options: ignore(i), use 1-10 (1-10) or leave(l)"
 
 
 main :: IO()
@@ -17,30 +24,61 @@ main = do
 		_ -> putStrLn "Expecting exactly two filenames as command line arguments."
 
 mainSpellcheck :: FilePath -> FilePath -> IO ()
-mainSpellcheck file1 file2 = do 
+mainSpellcheck file1 file2 = do
+
 	putStrLn "Reading Files..."
 	content1 <- readFile file1
 	content2 <- readFile file2
-	let words1 = words content1
 	let words2 = words content2
+
 	putStrLn "Generating Trie..."
 	let trie = generateTree words2
-	putStrLn "Tree generated!" 
-	mapM_ (analyseText trie) words1
+	putStrLn "Trie generated!"
+
+	putStrLn "Starting correction..." 
+	let sentences1 = sentences content1
+	analyseSentence trie sentences1
+	print "Ende2"
 
 
 
-sentences :: String -> [String] --
-sentences [] = []
-sentences cs = go cs []
-        where
-        	go :: String -> String -> [String]
-        	go []         [] = []
-        	go [c]        ws = if c=='.' then [ws] else [ws ++ [c]]
-        	go (c1:c2:cs) ws
-        	   | isEnd c1 c2 = ws : (go cs []) 
-        	   | otherwise   = go (c2:cs) (ws ++ [c1]) 
-        	    where isEnd c1 c2 = ((c1=='.') || (c1=='!') || (c1=='?')) && (c2==' ')-- Ending of a sentence
+
+
+analyseSentence :: [Tree Char] -> [(String,Char)] -> IO ()
+analyseSentence _    []     = print "Ende"
+analyseSentence trie ((cs,c):xs) = do 
+    
+    let words1 = words cs
+    mapM_ (analyseWord trie (cs,c)) words1
+    analyseSentence trie xs
+
+
+
+analyseWord :: [Tree Char] -> (String,Char) -> String -> IO ()
+analyseWord trie (cs,c) word
+                         | (contains trie word) = return ()
+	                     | otherwise            = do
+	                       print $ "Suggestions for " ++ word ++ " in the sentence: " 
+	                       print $ cs ++ [c]  
+
+	                       let resultList = (take 10 (findSuggestions trie word))
+	                       print $ (foldl (\ string (word,minEdit) -> string ++ word ++ " " ++ (show minEdit) ++ ", ") "" resultList)
+	                       print interface
+
+	                       key <- getChar
+
+	                       case key of
+	                       	'i' -> return ()
+	                       	key -> if (isDigit key) then print $ resultList !! (digitToInt key) else print "Error"
+
+
+needsSuggestions :: [Tree Char] -> String -> Maybe [(String,Int)]
+needsSuggestions trie cs =  if (contains trie cs)
+	                        then Nothing
+	                        else Just (take 10 (findSuggestions trie cs))
+
+
+
 
 analyseText :: [Tree Char] -> String -> IO () -- TODO: I need an interface!!!!!
 analyseText ts x = if (contains ts x) 
@@ -82,7 +120,18 @@ quicksort ((word,x):xs) = (quicksort (filter (lesser x) xs) ) ++ [(word,x)] ++ (
                               lesser x (_,y) = x>y
                               greaterEq x (_,y) = x<=y 
 
+sentences :: String -> [(String,Char)]
+sentences [] = []
+sentences cs = go cs []
+        where
+        	go :: String -> String -> [(String,Char)]
+        	go []         [] = []
+        	go [c]        ws = if (isEnd c) then [(ws,c)] else [(ws ++ [c],' ')]
+        	go (c1:c2:cs) ws
+        	   | (isEnd c1) && (c2==' ') = (ws,c1) : (go cs []) 
+        	   | otherwise               = go (c2:cs) (ws ++ [c1]) 
 
+isEnd c = (c=='.') || (c=='!') || (c=='?')     -- Ending of a sentence 
 
 
 
