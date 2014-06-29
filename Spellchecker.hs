@@ -2,6 +2,7 @@ module Main where
 import Control.Monad 
 import Data.List (foldl')
 import Data.Char
+import Text.Read
 
 
 import System.Environment (getArgs)
@@ -9,14 +10,7 @@ import System.Environment (getArgs)
 
 data Tree a = Node a Bool [Tree a] deriving Show
 
---interface :: [(String, [String] -> IO ())]
---interface = [("ignore (i)", ignore),("use (u)", use),("leave (l)", leave)]
-
-interface :: String 
-interface = "You have the following options: ignore(i), use 1-10 (1-10) or leave(l)"
-
-
-main :: IO()
+main :: IO ()
 main = do
 	args <- getArgs
 	case args of
@@ -45,7 +39,7 @@ mainSpellcheck file1 file2 = do
 
 
 analyseSentence :: [Tree Char] -> [(String,Char)] -> IO ()
-analyseSentence _    []     = print "Ende"
+analyseSentence _    []     = print "Write down the sentence" -- Den Satz aufschreiben TODO
 analyseSentence trie ((cs,c):xs) = do 
     
     let words1 = words cs
@@ -56,34 +50,49 @@ analyseSentence trie ((cs,c):xs) = do
 
 analyseWord :: [Tree Char] -> (String,Char) -> String -> IO ()
 analyseWord trie (cs,c) word
-                         | (contains trie word) = return ()
-	                     | otherwise            = do
-	                       print $ "Suggestions for " ++ word ++ " in the sentence: " 
-	                       print $ cs ++ [c]  
+           | (contains trie word) = return ()
+	       | otherwise            = do
+	            print $ "Suggestions for " ++ word ++ " in the sentence:" 
+	            print $ cs ++ [c]  
 
-	                       let resultList = (take 10 (findSuggestions trie word))
-	                       print $ (foldl (\ string (word,minEdit) -> string ++ word ++ " " ++ (show minEdit) ++ ", ") "" resultList)
-	                       print interface
-
-	                       key <- getChar
-
-	                       case key of
-	                       	'i' -> return ()
-	                       	key -> if (isDigit key) then print $ resultList !! (digitToInt key) else print "Error"
+	            let resultList = (findSuggestions trie word)
+	            interface resultList 10
 
 
-needsSuggestions :: [Tree Char] -> String -> Maybe [(String,Int)]
-needsSuggestions trie cs =  if (contains trie cs)
-	                        then Nothing
-	                        else Just (take 10 (findSuggestions trie cs))
+interface :: [(String,Int)] -> Int -> IO () --Prints interface + suggestions and parses the user input
+interface resultList x = do
+
+    let modList = (modResultList x resultList)
+    print $ foldl (\ string (word,index) -> string ++ word ++ " " ++ (show index) ++ ", ") "" modList
+    print "Options: (i)gnore,(m)ore suggestions,pick a number"
+
+    input <- getLine
+    case input of
+        "i" -> return ()
+        "m" -> interface resultList (x+5)
+        key -> case readMaybe key :: Maybe Int of 
+            Just a -> if (a>=0) && (a>=length modList) 
+                      then print "Not a valid input" >> interface resultList x
+                      else print (modList !! a )
+            Nothing -> print "Not a valid input" >> interface resultList x
+
+
+
+modResultList ::  Int -> [(String,Int)] -> [(String,Int)] --adds the index and prevents out of range errors of the result list
+modResultList x resultList =  if (x>len) then makeIndex [0..len] (take len resultList) else makeIndex [0..x] (take x resultList)
+	                                  where
+	                                 	len = length resultList
+	                                 	makeIndex _     []          = []
+	                                 	makeIndex (y:ys) ((a,b):xs) = (a,y) : makeIndex ys xs
 
 
 
 
-analyseText :: [Tree Char] -> String -> IO () -- TODO: I need an interface!!!!!
+{-analyseText :: [Tree Char] -> String -> IO () -- TODO: I need an interface!!!!!
 analyseText ts x = if (contains ts x) 
 	               then return ()
 	               else print $ "Suggestions for " ++ x ++ ": " ++ (foldl (\ string (word,minEdit) -> string ++ word ++ " " ++ (show minEdit) ++ ", ") "" (take 10 (findSuggestions ts x)))
+-}
 
 -- findSuggestions trie "Halo" 
 findSuggestions :: [Tree Char] -> String -> [(String,Int)]
@@ -110,7 +119,29 @@ calcRow ::  Char -> [Char] -> [Int] -> [Int] -> [Int] --TODO: Build a function t
 calcRow _ []     cr     lastrow      = cr
 calcRow x (y:ys) (c:cr) (fir:sec:lr)
                                    | (x==y)    = let ele = min fir (min (sec+1) (c+1)) in calcRow x ys (ele:c:cr) (sec:lr)
-                                   | otherwise = let ele = min (fir+2) (min (sec+1) (c+1)) in calcRow x ys (ele:c:cr) (sec:lr)  
+                                   | otherwise = let ele = min (fir+1) (min (sec+1) (c+1)) in calcRow x ys (ele:c:cr) (sec:lr)  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 quicksort :: Ord a => [(b,a)] -> [(b,a)] -- \0/ I learned this in "Grundlagen der Programmierung" TODO: Better filter function that give back a tupel ([lesser],[greater])
@@ -119,6 +150,23 @@ quicksort ((word,x):xs) = (quicksort (filter (lesser x) xs) ) ++ [(word,x)] ++ (
                             where
                               lesser x (_,y) = x>y
                               greaterEq x (_,y) = x<=y 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 sentences :: String -> [(String,Char)]
 sentences [] = []
@@ -135,6 +183,22 @@ isEnd c = (c=='.') || (c=='!') || (c=='?')     -- Ending of a sentence
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 generateTree :: [String] -> [Tree Char]
 generateTree ws = foldl' (insertInTree) [] ws
 
@@ -148,6 +212,8 @@ insertInTree ((Node a b c):ts) (x:xs)  = if x == a
 	                                    then (Node a b (insertInTree c xs)):ts 
 	                                    else (Node a b c):(insertInTree ts (x:xs))
 
+
+
 contains :: [Tree Char] -> String -> Bool   -- checks if a word is in a given trie 
 contains _  [] = True
 contains [] _  = False
@@ -157,6 +223,10 @@ contains ((Node a b c):ts) [x]    = if a == x
 contains ((Node a b c):ts) (x:xs) = if a == x
 	                                then contains c  xs
 	                                else contains ts (x:xs)
+
+
+
+
 
 
 -- Some Test for tree testing
@@ -173,23 +243,3 @@ treeTest (x:xs) ts = (contains ts x) && (treeTest xs ts)
 
 
 
-
-
-
-diff :: Eq a => [a] -> [a] ->  Int --My diff from the previous task for testing, also I reused my calcRow function
-diff xs ys = (matrix !! 0) !! 0
-            where
-               matrix = map reverse $ calcMatrix xs ys 1 [[0..(length ys)]] 
-
---calcMatrix "Hallo" "Hi" 1 [[0..(length "Hi")]]
-
-calcMatrix :: Eq a => [a] -> [a] -> Int -> [[Int]] -> [[Int]]
-calcMatrix []     _  acc ms     = ms 
-calcMatrix (x:xs) ys acc (m:ms) = calcMatrix xs ys (acc+1) ((calcRow2 x ys [acc] m):m:ms)
-                                 	
-
-calcRow2 :: Eq a => a -> [a] -> [Int] -> [Int] -> [Int]
-calcRow2 _ []     rs     ts       = reverse rs
-calcRow2 x (y:ys) (r:rs) (a:b:ts)
-                                | (x == y)  = let ele = min a (min (b+1) (r+1)) in calcRow2 x ys (ele:r:rs) (b:ts)
-                                | otherwise = let ele = min (a+2) (min (b+1) (r+1)) in calcRow2 x ys (ele:r:rs) (b:ts)
