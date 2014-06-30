@@ -111,29 +111,55 @@ modResultList x resultList =  if (x>len)
 
 -- a wrapper for the calcSuggestions function
 findSuggestions :: [Tree Char] -> String -> [(String,Int)]
-findSuggestions ts word = sortBy (comparing snd) (calcSuggestions ts [] word 8 1 [0..(length word)])
+findSuggestions ts word = sortBy (comparing snd) (calcSuggestions ts [] word 8 1 [] [0..(length word)])
 
 {- calcSuggestions trie [] "Halo" 8 1 [0..(length "Halo")]
 Parameters: Trie , the tempWord we build up while traversing the trie, the word we want suggestions for, 
-the treshold for the minimum Editdistance, a accu, the row from the rood node
+the treshold for the minimum Editdistance, a accu, previous row, last row 
 
 This is the main function that calculates the suggestions for a word, it works it way
 through the trie and adds all suggestions to the result list, that have a minimum edit 
 distance that is lesser than the treshhold.-}
-calcSuggestions :: [Tree Char] -> String -> String -> Int -> Int -> [Int] -> [(String,Int)] 
-calcSuggestions []                _        _    _      _   _ = []
-calcSuggestions ((Node a b c):ts) tempWord word thresh acc lastrow
+calcSuggestions :: [Tree Char] -> String -> String -> Int -> Int -> [Int] -> [Int] -> [(String,Int)] 
+calcSuggestions []                _        _    _      _   _       _ = []
+calcSuggestions ((Node a b c):ts) tempWord word thresh acc prevrow lastrow
                | b  && (editDis < thresh)=                                                 -- word end and minimum Editdistance smaller than the threshold,
                              (reverse (a:tempWord),editDis)                                -- adding a new tupel to the result list,
-                          :  (calcSuggestions ts tempWord word thresh acc lastrow)         -- searching through the remaining nodes on the same level,
-                          ++ (calcSuggestions c (a:tempWord) word thresh (acc+1) currow)   -- searching through the child nodes.
+                          :  (calcSuggestions ts tempWord word thresh acc prevrow lastrow)         -- searching through the remaining nodes on the same level,
+                          ++ (calcSuggestions c (a:tempWord) word thresh (acc+1) lastrow currow)   -- searching through the child nodes.
             
-               | otherwise = (calcSuggestions ts tempWord word thresh acc lastrow)        -- searching through the remaining nodes on the same level.
-                          ++ (calcSuggestions c (a:tempWord) word thresh (acc+1) currow)   -- searching through the child nodes.
+               | otherwise = (calcSuggestions ts tempWord word thresh acc prevrow lastrow)        -- searching through the remaining nodes on the same level.
+                          ++ (calcSuggestions c (a:tempWord) word thresh (acc+1) lastrow currow)   -- searching through the child nodes.
                             where
-                              row     =  (calcRow a word [acc] lastrow)                
+                              row     =  
+                                         if (isSwap tempWord word)
+                                         then reverse (replaceElement revPosition revEle  (reverse (calcRow a word [acc] lastrow)))
+                                         else (calcRow a word [acc] lastrow)                
                               currow  = reverse row
-                              editDis = head row                                       -- the minimmal edit distance at the moment
+                              editDis = head row   -- the minimmal edit distance at the moment
+                              
+                              revPosition = length tempWord
+                              revEle = (prevrow !! (revPosition - 2)) + 1
+
+replaceElement :: Int -> Int -> [Int] -> [Int]
+replaceElement 0 x (y:ys) = if x < y then recalc (x : ys) else y : ys  
+replaceElement n x (y:ys) = y : (replaceElement (n-1) x ys)
+                                                   
+recalc :: [Int] -> [Int]
+recalc [x]    = [x]
+recalc (x1:x2:xs) = if ((x1+1)<x2) then x1 : (recalc ((x1+1):xs)) else x1:x2:xs 
+
+
+isSwap :: String -> String -> Bool
+isSwap _       []         = False
+isSwap []      _          = False 
+isSwap _       [y]        = False
+isSwap [x]     _          = False 
+isSwap [x1,x2] (y1:y2:ys) = (x1==y2) && (x2==y1)
+isSwap (x:xs)  (y:ys)     = isSwap xs ys 
+
+
+
                              
 {-calculates one row, takes the char of the node, the word we a correcting,
 the current row we are calculating and the previous row-}
