@@ -5,8 +5,10 @@ import Text.Read (readMaybe)
 import Data.List (sortBy)
 import Data.Ord (comparing)
 import System.Environment (getArgs)
+import Data.Char
 
 data Tree a = Node a Bool [Tree a] deriving Show
+
 
 main :: IO ()
 main = do
@@ -25,140 +27,114 @@ mainSpellcheck file1 file2 = do
        
     putStrLn "Generating Trie..."
     let trie = generateTree words2
-    
- 
     putStrLn "Trie generated!" 
+
     putStrLn "Starting correction..." 
     let sentences1 = sentences content1
-    analyseSentence trie sentences1
-    print "Ende"
+    text <- mapM (wrapSentence trie) sentences1
+    writeFile "corrected.txt" (unwords text)
+    print "You can find your corrected text in corrected.txt"
 
-analyseSentence :: [Tree Char] -> [String] -> IO ()
-analyseSentence _    []     = print "Write down the sentence" -- Den Satz aufschreiben TODO
-analyseSentence trie (cs:xs) = do 
-    
-    let words1 = words cs
-    mapM_ (analyseWord trie cs) words1
-    analyseSentence trie xs
 
-analyseWord :: [Tree Char] -> String -> String -> IO ()
+   
+-- a wraper for the analyseSentence function
+wrapSentence :: [Tree Char] -> String -> IO String
+wrapSentence trie sentence = analyseSentence trie [] [] sentence
+
+{-This functions walks over a sentence and seperates words that can be send to correction,
+it keeps the entire sentence split up in its parts: front + tempWord + [b] + back, so it can be 
+put together when the analyseWord function needs the full sentence as context for the user-}
+analyseSentence :: [Tree Char] -> String -> String -> String -> IO String
+analyseSentence trie tempWord front [] = if null tempWord --This saves the last word of the last sentence from oblivion
+	                                           then return front
+	                                           else do
+	                                           	correction <- (analyseWord trie (front ++ tempWord) tempWord) 
+	                                           	return (front ++ correction)
+
+analyseSentence trie tempWord front (b:back)
+                    | isLetter b = analyseSentence trie (tempWord ++ [b]) front back  -- in the middle of a word
+                   
+                    | not (null tempWord) = do                                            --we found a word and send it to correction    
+                    	correction <- (analyseWord trie (front ++ tempWord ++ [b] ++ back) tempWord)   
+                        analyseSentence trie [] (front ++ correction ++ [b]) back
+                    
+                    | otherwise = analyseSentence trie [] (front ++ [b]) back   --a char that is not a letter is added to front
+
+{-Takes a trie, a sentence and a word. First the function checks if a correction of the word is needed,
+by checking if the trie contains the word, if not suggestions are calculated and the controlMenu is called. -}
+analyseWord :: [Tree Char] -> String -> String -> IO String
 analyseWord trie cs word
-           | (contains trie word) = return ()
-	       | otherwise            = do
-	            print $ "Suggestions for " ++ word ++ " in the sentence:" 
-	            print $ cs 
+           | (contains trie word) = return word
+           | otherwise            = do
+                print $ "Suggestions for ->" ++ word ++ "<- in the sentence:" 
+                print $ cs 
 
-	            let resultList = (findSuggestions trie word)
-	            interface resultList 10
+                let resultList = (findSuggestions trie word)
+                correction <- (controlMenu resultList 10) 
 
-interface :: [(String,Int)] -> Int -> IO () --Prints interface + suggestions and parses the user input
-interface resultList x = do
+                if correction == "" 
+                then return word
+                else return correction
+
+{---Prints the control menu + suggestions and parses the user input, 
+gives back "" if the suggestions where ignored, or the suggestion that the user picked.
+If more is picked the controlMenu is called with (x+5) -}
+controlMenu :: [(String,Int)] -> Int -> IO String 
+controlMenu resultList x = do
 
     let modList = (modResultList x resultList)
+
     print $ foldl (\ string (word,index) -> string ++ word ++ " " ++ (show index) ++ ", ") "" modList
     print "Options: (i)gnore,(m)ore suggestions,pick a number"
 
     input <- getLine
     case input of
-        "i" -> return ()
-        "m" -> interface resultList (x+5)
+        "i" -> return ""
+        "m" -> controlMenu resultList (x+5)
         key -> case readMaybe key :: Maybe Int of 
-            Just a -> if (a>=0) && (a>=length modList) 
-                      then print "Not a valid input" >> interface resultList x
-                      else print (modList !! a )
-            Nothing -> print "Not a valid input" >> interface resultList x
+            Just a -> if (a<0) || (a>=length modList) 
+                      then print "Not a valid input" >> controlMenu resultList x
+                      else let (result,_) = (modList !! a ) in return result
+            Nothing -> print "Not a valid input" >> controlMenu resultList x
 
-modResultList ::  Int -> [(String,Int)] -> [(String,Int)] --adds the index and prevents out of range errors of the result list
-modResultList x resultList =  if (x>len) then makeIndex [0..len] (take len resultList) else makeIndex [0..x] (take x resultList)
+
+{- This function removes the minimum edit distance and replaces it with an index,
+returns x elements of the list, or the entire list-}
+modResultList ::  Int -> [(String,Int)] -> [(String,Int)] 
+modResultList x resultList =  if (x>len) 
+                              then makeIndex [0..len] (take len resultList) 
+                              else makeIndex [0..x] (take x resultList)
 	                                  where
 	                                 	len = length resultList
 	                                 	makeIndex _     []          = []
 	                                 	makeIndex (y:ys) ((a,b):xs) = (a,y) : makeIndex ys xs
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
--- findSuggestions trie "Halo" 
+-- a wrapper for the calcSuggestions function
 findSuggestions :: [Tree Char] -> String -> [(String,Int)]
 findSuggestions ts word = sortBy (comparing snd) (calcSuggestions ts [] word 8 1 [0..(length word)])
 
-
-
 {- calcSuggestions trie [] "Halo" 8 1 [0..(length "Halo")]
-Parameters: Trie , the tempWord we build up while traversing the trie, the word we want suggestions for, the treshold for the minimum Editdistance, a accu, the row from the rood node-}
+Parameters: Trie , the tempWord we build up while traversing the trie, the word we want suggestions for, 
+the treshold for the minimum Editdistance, a accu, the row from the rood node
+
+This is the main function that calculates the suggestions for a word, it works it way
+through the trie and adds all suggestions to the result list, that have a minimum edit 
+distance that is lesser than the treshhold.-}
 calcSuggestions :: [Tree Char] -> String -> String -> Int -> Int -> [Int] -> [(String,Int)] 
 calcSuggestions []                _        _    _      _   _ = []
 calcSuggestions ((Node a b c):ts) tempWord word thresh acc lastrow
-               | b  && (bestEdit < thresh)  && (editDis < thresh)=                                              -- word end and minimum Editdistance smaller than the threshold,
+               | b  && (editDis < thresh)=                                                 -- word end and minimum Editdistance smaller than the threshold,
                              (reverse (a:tempWord),editDis)                                -- adding a new tupel to the result list,
                           :  (calcSuggestions ts tempWord word thresh acc lastrow)         -- searching through the remaining nodes on the same level,
                           ++ (calcSuggestions c (a:tempWord) word thresh (acc+1) currow)   -- searching through the child nodes.
             
-               | b  && (editDis < thresh) && (editDis < thresh) = 
-                            (reverse (a:tempWord),editDis)                                 -- adding a new tupel to the result list,
-                          : (calcSuggestions ts tempWord word thresh acc lastrow)          -- searching through the remaining nodes on the same level,
-{-                | (bestEdit < thresh) =
-                            (calcSuggestions ts tempWord word thresh acc lastrow)          -- searching through the remaining nodes on the same level,
-                          ++ (calcSuggestions c (a:tempWord) word thresh (acc+1) currow)   -- searching through the child nodes.
-               
--}
-
                | otherwise = (calcSuggestions ts tempWord word thresh acc lastrow)        -- searching through the remaining nodes on the same level.
                           ++ (calcSuggestions c (a:tempWord) word thresh (acc+1) currow)   -- searching through the child nodes.
                             where
-                              row     = if (isSwap (a:tempWord) word) 
-                              	        then (calcRow a word [acc] lastrow)  --black magic
-                              	        else (calcRow a word [acc] lastrow)                --ordinary magic 
-
+                              row     =  (calcRow a word [acc] lastrow)                
                               currow  = reverse row
                               editDis = head row                                       -- the minimmal edit distance at the moment
-                              bestEdit = editDis - ((length tempWord) - (length word)) -- the best minimal edit distance I still can achieve
-
-                              -- the first is my tempWord(its in reverse) the second is my word that needs correction, this function is "special"
-                              isSwap :: String -> String -> Bool
-                              isSwap [x]        _  = False
-                              isSwap (x1:x2:xs) ws = (x1 == y1) && (x2==y2)
-                                  where
-                       	            (y1,y2) = lastTwo ws
-                                    lastTwo :: String -> (Char,Char)
-                                    lastTwo []      = (' ',' ')  --there are no ' ' in seperated words so this evaluates to False
-                                    lastTwo [x]     = (' ',' ')
-                                    lastTwo [x1,x2] = (x1,x2)
-                                    lastTwo (x:xs)  = lastTwo xs
-
-
-
-                       	
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                             
 {-calculates one row, takes the char of the node, the word we a correcting,
 the current row we are calculating and the previous row-}
 calcRow ::  Char -> [Char] -> [Int] -> [Int] -> [Int]
@@ -207,9 +183,3 @@ contains ((Node a b c):ts) [x]    = if a == x             -- case: the last lett
 contains ((Node a b c):ts) (x:xs) = if a == x               -- case: a letter somewhere in the word
                                     then contains c  xs     -- searches in the new child trees
                                     else contains ts (x:xs) -- searches on the same level
-
-
-analyseText :: [Tree Char] -> String -> IO () -- TODO: I need an interface!!!!!
-analyseText ts x = if (contains ts x) 
-	               then return ()
-	               else print $ "Suggestions for " ++ x ++ ": " ++ (foldl (\ string (word,minEdit) -> string ++ word ++ " " ++ (show minEdit) ++ ", ") "" (take 10 (findSuggestions ts x)))
